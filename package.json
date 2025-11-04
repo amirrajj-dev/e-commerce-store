@@ -2,9 +2,9 @@
   "name": "e-commerce-store",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "backend/src/index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start" : "bun run backend/src/index.ts"
   },
   "keywords": [],
   "author": "",
