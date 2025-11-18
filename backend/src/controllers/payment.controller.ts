@@ -6,6 +6,8 @@ import { ENV } from '../configs/env.js';
 import { createNewCoupon } from '../helpers/create-new-coupon.js';
 import { createStripeCoupon } from '../helpers/create-stripe-coupon.js';
 import type { CreateCheckoutSessionDto } from '../types/dtos/payment.dto';
+import { Prisma } from '@prisma/client';
+import logger from '../utils/logger.js';
 
 export const createCheckoutSession = async (
   req: Request<{}, {}, CreateCheckoutSessionDto>,
@@ -74,7 +76,8 @@ export const createCheckoutSession = async (
     });
 
     if (totalAmount >= 20000) {
-      await createNewCoupon(req.user!.id);
+      // 20000 cents = 200$
+      await createNewCoupon(req.user!.id, totalAmount / 100);
     }
 
     return res.status(200).json(
@@ -83,6 +86,7 @@ export const createCheckoutSession = async (
         {
           id: session.id,
           totalAmount: totalAmount / 100,
+          url: session.url,
         },
         req.path,
       ),
@@ -99,6 +103,8 @@ export const checkoutSuccess = async (
 ) => {
   try {
     const { sessionId } = req.body;
+    logger.info(`Processing checkout success for session: ${sessionId}`);
+
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.payment_status !== 'paid') {
@@ -113,53 +119,135 @@ export const checkoutSuccess = async (
         .json(ApiResponseHelper.error('MISSING_METADATA', 'User ID missing in session metadata'));
     }
 
-    if (session.metadata.couponCode) {
-      await prisma.coupon.update({
-        where: { code: session.metadata.couponCode },
-        data: { isActive: false },
-      });
-    }
+    // Use transaction to handle race conditions atomically
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // Check if order already exists WITHIN the transaction
+        const existingOrder = await tx.order.findUnique({
+          where: { stripeSessionId: sessionId },
+        });
 
-    const products: { id: string; price: number; quantity: number }[] = JSON.parse(
-      session.metadata.products || '[]',
+        if (existingOrder) {
+          logger.warn(`Order already exists for session: ${sessionId}`);
+          return {
+            orderId: existingOrder.id,
+            totalAmount: existingOrder.totalAmount,
+            isNew: false,
+          };
+        }
+
+        logger.info(`Creating new order for session: ${sessionId}`);
+
+        // Parse products
+        const products: { id: string; price: number; quantity: number }[] = JSON.parse(
+          session?.metadata?.products || '[]',
+        );
+
+        // Deactivate coupon if used
+        if (session?.metadata?.couponCode) {
+          logger.info(`Deactivating coupon: ${session.metadata.couponCode}`);
+
+          const updateResult = await tx.coupon.updateMany({
+            where: {
+              code: session.metadata.couponCode,
+              isActive: true, // Only update active coupons
+            },
+            data: { isActive: false },
+          });
+
+          logger.info(`Coupons deactivated: ${updateResult.count}`);
+        }
+
+        // Create the order
+        const newOrder = await tx.order.create({
+          data: {
+            userId: (session?.metadata?.userId as string) || (req?.user?.id as string),
+            totalAmount: (session.amount_total ?? 0) / 100,
+            stripeSessionId: sessionId,
+            orderItems: {
+              create: products.map((product) => ({
+                productId: product.id,
+                quantity: product.quantity,
+                price: product.price,
+              })),
+            },
+          },
+        });
+
+        logger.info(`Order created: ${newOrder.id}`);
+
+        // Update product quantities
+        for (const product of products) {
+          console.log('Updating product stock:', product.id, 'quantity:', product.quantity);
+          await tx.product.update({
+            where: { id: product.id },
+            data: {
+              quantity: {
+                decrement: product.quantity,
+              },
+            },
+          });
+        }
+
+        return {
+          orderId: newOrder.id,
+          totalAmount: newOrder.totalAmount,
+          isNew: true,
+        };
+      },
+      {
+        // Increase timeout for complex transactions
+        timeout: 30000,
+      },
     );
 
-    const newOrder = await prisma.order.create({
-      data: {
-        userId: session.metadata.userId,
-        totalAmount: (session.amount_total ?? 0) / 100,
-        stripeSessionId: sessionId,
-        orderItems: {
-          create: products.map((product) => ({
-            productId: product.id,
-            quantity: product.quantity,
-            price: product.price,
-          })),
-        },
-      },
-    });
+    const message = result.isNew
+      ? 'Payment successful, order created, product stock updated, and coupon deactivated if used.'
+      : 'Order already processed successfully.';
 
-    for (const product of products) {
-      await prisma.product.update({
-        where: { id: product.id },
-        data: {
-          quantity: {
-            decrement: product.quantity,
-          },
+    logger.info(message);
+
+    return res.status(200).json(
+      ApiResponseHelper.success(
+        message,
+        {
+          orderId: result.orderId,
+          totalAmount: result.totalAmount,
         },
-      });
+        req.path,
+      ),
+    );
+  } catch (error) {
+    console.error('Error in checkoutSuccess:', error);
+
+    // specific Prisma errors
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') {
+        // Unique constraint violation - order already exists
+        logger.error('P2002 error - order already exists, fetching existing order');
+        try {
+          const existingOrder = await prisma.order.findUnique({
+            where: { stripeSessionId: req.body.sessionId },
+          });
+
+          if (existingOrder) {
+            return res.status(200).json(
+              ApiResponseHelper.success(
+                'Order processed successfully.',
+                {
+                  orderId: existingOrder.id,
+                  totalAmount: existingOrder.totalAmount,
+                },
+                req.path,
+              ),
+            );
+          }
+        } catch (findError) {
+          console.error('Error finding existing order:', findError);
+        }
+      }
     }
 
-    return res
-      .status(200)
-      .json(
-        ApiResponseHelper.success(
-          'Payment successful, order created, product stock updated, and coupon deactivated if used.',
-          { orderId: newOrder.id },
-          req.path,
-        ),
-      );
-  } catch (error) {
     next(error);
   }
 };

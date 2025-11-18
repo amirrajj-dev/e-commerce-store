@@ -1,12 +1,12 @@
 import type { NextFunction, Request, Response } from 'express';
 import prisma from '../utils/prisma';
 import { ApiResponseHelper } from '../helpers/api.helper';
-import { redis } from 'bun';
+import { redis } from '../utils/redis';
 import type { UpdateProductDto, CreateProductDto } from '../types/dtos/product.dto';
-import cloudinary from '../utils/cloudinary';
 import { body, validationResult } from 'express-validator';
 import logger from '../utils/logger';
 import { updateFeaturedProductsCache } from '../helpers/update-featured-products-cache';
+import { deleteFromCloudinary, uploadToCloudinary } from '../utils/cloudinary';
 
 export const getAllProducts = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -73,11 +73,6 @@ export const createProduct = [
     .isLength({ min: 3, max: 50 })
     .withMessage('Category must be between 3 and 50 characters'),
   body('quantity').isInt({ gt: 0 }).withMessage('Quantity must be a non-negative integer'),
-  body('image')
-    .optional()
-    .isString()
-    .matches(/^data:image\/(jpeg|png|jpg|webp);base64,/)
-    .withMessage('Image must be a valid base64-encoded image (jpeg, png, jpg, webp)'),
   async (req: Request<{}, {}, CreateProductDto>, res: Response, next: NextFunction) => {
     try {
       const errors = validationResult(req);
@@ -93,25 +88,27 @@ export const createProduct = [
             ),
           );
       }
-      const { name, image, category, description, price, quantity } = req.body;
-      let cloudinaryResponse = null;
-      if (image) {
-        try {
-          cloudinaryResponse = await cloudinary.uploader.upload(image, {
-            folder: 'e-commerce-products',
-          });
-        } catch (error) {
-          return res.status(500).json(ApiResponseHelper.internalError('failed to upload image'));
-        }
+      const { name, category, description, price, quantity } = req.body;
+      const image = req.files!.image;
+      let imageData: { publicId?: string; secureUrl?: string } = {};
+      try {
+        const { public_id, secure_url } = await uploadToCloudinary(image);
+        imageData.secureUrl = secure_url;
+        imageData.publicId = public_id;
+      } catch (error) {
+        return res
+          .status(500)
+          .json(ApiResponseHelper.internalError('error uploading image to cloudinary'));
       }
       const product = await prisma.product.create({
         data: {
           name,
           description,
-          price,
+          price: Number(price),
           category,
-          quantity,
-          image: cloudinaryResponse?.secure_url ? cloudinaryResponse.secure_url : '',
+          quantity: Number(quantity),
+          image: imageData.secureUrl ? imageData.secureUrl : '',
+          publicId: imageData.publicId ? imageData.publicId : '',
         },
       });
       return res
@@ -139,9 +136,8 @@ export const deleteProduct = async (
       return res.status(404).json(ApiResponseHelper.notFound('Product Not Found'));
     }
     if (product.image) {
-      const publicId = product.image.split('/').pop()?.split('.')[0];
       try {
-        await cloudinary.uploader.destroy(publicId as string);
+        await deleteFromCloudinary(product.publicId, 'image');
         logger.info('product image delete succesfully');
       } catch (error) {
         return res
@@ -166,9 +162,9 @@ export const deleteProduct = async (
 export const getRecommendedProducts = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const randomProducts = await prisma.$queryRaw`
-  SELECT * FROM "Product"
+  SELECT * FROM "products"
   ORDER BY RANDOM()
-  LIMIT 3;
+  LIMIT 4;
 `;
     return res
       .status(200)
@@ -193,7 +189,7 @@ export const getProductsByCategory = async (
     const { category } = req.params;
     const products = await prisma.product.findMany({
       where: {
-        category,
+        category: category.charAt(0).toUpperCase() + category.slice(1),
       },
     });
     return res
@@ -254,11 +250,7 @@ export const updateProduct = [
     .isLength({ min: 3, max: 50 })
     .withMessage('Category must be between 3 and 50 characters'),
   body('quantity').isInt({ gt: 0 }).withMessage('Quantity must be a non-negative integer'),
-  body('image')
-    .optional()
-    .isString()
-    .matches(/^data:image\/(jpeg|png|jpg|webp);base64,/)
-    .withMessage('Image must be a valid base64-encoded image (jpeg, png, jpg, webp)'),
+  body('image').optional(),
   async (req: Request<{ id: string }, {}, UpdateProductDto>, res: Response, next: NextFunction) => {
     try {
       const errors = validationResult(req);
@@ -275,7 +267,7 @@ export const updateProduct = [
           );
       }
       const { id } = req.params;
-      const { name, description, price, category, image, quantity } = req.body;
+      const { name, description, price, category, quantity } = req.body;
       const product = await prisma.product.findUnique({
         where: {
           id,
@@ -284,27 +276,27 @@ export const updateProduct = [
       if (!product) {
         return res.status(404).json(ApiResponseHelper.notFound('Product Not Found', req.path));
       }
-      let cloudinaryResponse = null;
+      const image = req.files?.image;
+      let imageData: { publicId?: string; secureUrl?: string } = {};
+      if (image) {
+        try {
+          const { secure_url, public_id } = await uploadToCloudinary(image);
+          imageData.secureUrl = secure_url;
+          imageData.publicId = public_id;
+        } catch (error) {
+          return res
+            .status(500)
+            .json(ApiResponseHelper.internalError('failed to upload new product image', req.path));
+        }
+      }
       if (product.image && image) {
         try {
-          const publicId = product.image.split('/').pop()?.split('.')[0];
-          await cloudinary.uploader.destroy(publicId as string);
+          await deleteFromCloudinary(product.publicId, 'image');
           logger.info('old product image deleted succesfully');
         } catch (error) {
           return res
             .status(500)
             .json(ApiResponseHelper.internalError('failed to delete old product image', req.path));
-        }
-      }
-      if (image) {
-        try {
-          cloudinaryResponse = await cloudinary.uploader.upload(image, {
-            folder: 'e-commerce-products',
-          });
-        } catch (error) {
-          return res
-            .status(500)
-            .json(ApiResponseHelper.internalError('failed to upload new product image', req.path));
         }
       }
       const updatedProduct = await prisma.product.update({
@@ -314,10 +306,10 @@ export const updateProduct = [
         data: {
           name: name ?? product.name,
           description: description ?? product.description,
-          price: price ?? product.price,
+          price: Number(price) ?? product.price,
           category: category ?? product.category,
-          quantity: quantity ?? product.quantity,
-          image: cloudinaryResponse?.secure_url ? cloudinaryResponse.secure_url : product?.image,
+          quantity: Number(quantity) ?? product.quantity,
+          image: imageData?.secureUrl ? imageData.secureUrl : product?.image,
         },
       });
       if (product.isFeatured) {

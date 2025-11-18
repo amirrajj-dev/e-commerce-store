@@ -2,7 +2,6 @@ import type { Request, Response, NextFunction } from 'express';
 import prisma from '../utils/prisma.js';
 import { ApiResponseHelper } from '../helpers/api.helper.js';
 
-//  Main analytics controller
 export const getAnalytics = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const [totalUsers, totalProducts, totalOrders, revenueData] = await Promise.all([
@@ -16,7 +15,7 @@ export const getAnalytics = async (req: Request, res: Response, next: NextFuncti
 
     const totalRevenue = revenueData._sum.totalAmount || 0;
 
-    // 2️Define last 7 days range
+    // Define last 7 days range
     const endDate = new Date();
     const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
 

@@ -1,3 +1,4 @@
+import logger from '../utils/logger';
 import prisma from '../utils/prisma';
 import { redis } from '../utils/redis';
 
@@ -15,9 +16,8 @@ export const updateFeaturedProductsCache = async () => {
       43200,
     );
   } catch (error) {
-    console.log(
-      'error in update featured products cache => ',
-      error instanceof Error ? error.message : error,
+    logger.error(
+      `error in update featured products cache => ${error instanceof Error ? error.message : error}`,
     );
   }
 };

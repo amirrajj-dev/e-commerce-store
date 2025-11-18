@@ -22,7 +22,6 @@ const logger = winston.createLogger({
   ],
 });
 
-// Add console transport for development
 if (ENV.NODE_ENV !== 'production') {
   logger.add(
     new winston.transports.Console({

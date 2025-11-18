@@ -15,11 +15,6 @@ if (ENV.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
-// handle shutdown
-process.on('beforeExit', async () => {
-  await prisma.$disconnect();
-});
-
 process.on('SIGINT', async () => {
   await prisma.$disconnect();
   process.exit(0);

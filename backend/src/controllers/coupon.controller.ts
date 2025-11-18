@@ -58,7 +58,13 @@ export const validateCoupon = [
           .json(ApiResponseHelper.error('EXPIRED_ERROR', 'Coupon has expired', req.path));
       }
 
-      return res.status(200).json(ApiResponseHelper.success('Valid coupon'));
+      return res.status(200).json(
+        ApiResponseHelper.success('Valid coupon', {
+          code: coupon.code,
+          isValid: coupon.isActive,
+          percent: coupon.discountPercentage,
+        }),
+      );
     } catch (error) {
       next(error);
     }
@@ -72,7 +78,12 @@ export const createCoupon = async (
 ) => {
   try {
     const { code, discountPercentage, expirationDate, userId } = req.body;
-
+    // delete users previous coupons
+    await prisma.coupon.deleteMany({
+      where: {
+        userId,
+      },
+    });
     const newCoupon = await prisma.coupon.create({
       data: {
         code,

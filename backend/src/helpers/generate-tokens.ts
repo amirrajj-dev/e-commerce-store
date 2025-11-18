@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { ENV } from '../configs/env';
+import logger from '../utils/logger';
 
 export const generateTokens = (userId: string) => {
   try {
@@ -11,7 +12,7 @@ export const generateTokens = (userId: string) => {
     });
     return { accessToken, refreshToken };
   } catch (error) {
-    console.log('error signing tokens => ', error instanceof Error ? error.message : error);
+    logger.error('error signing tokens => ', error instanceof Error ? error.message : error);
     return {
       accessToken: null,
       refreshToken: null,

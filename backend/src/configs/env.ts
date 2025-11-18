@@ -6,7 +6,7 @@ export const ENV = {
   DATABASE_URL: process.env.DATABASE_URL,
   SALT: process.env.SALT || 10,
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
-  UPSTASH_REDIS_URL: process.env.UPSTASH_REDIS_URL,
+  REDIS_URL: process.env.REDIS_URL,
   ACCESS_JWT_SECRET: process.env.ACCESS_JWT_SECRET,
   REFRESH_JWT_SECRET: process.env.REFRESH_JWT_SECRET,
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,

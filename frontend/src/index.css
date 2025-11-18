@@ -1,0 +1,17 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@layer base {
+  [data-sonner-toast][data-x-position=right] {
+    @apply bg-base-100! border-none!
+  }
+  [data-sonner-toast][data-styled=true] [data-title]{
+    @apply text-transparent! bg-clip-text! bg-linear-to-r! from-success! to-accent!
+  }
+  [data-sonner-toast][data-styled=true] [data-icon] {
+    @apply text-accent!
+  }
+  .swiper-pagination-bullet , .swiper-pagination-bullet-active {
+    @apply bg-success!
+  }
+}

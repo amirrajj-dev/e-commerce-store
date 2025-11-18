@@ -109,6 +109,20 @@ export const removeProductFromCart = async (
   }
 };
 
+export const clearCart = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await prisma.cartItem.deleteMany({
+      where: {
+        userId: req.user!.id,
+      },
+    });
+
+    return res.status(200).json(ApiResponseHelper.success('Cart cleared successfully', req.path));
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const updateProductQuantity = [
   body('quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
   async (

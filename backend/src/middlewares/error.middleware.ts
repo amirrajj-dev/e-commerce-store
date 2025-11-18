@@ -16,11 +16,9 @@ export const errorMiddleware = (
   res: Response,
   next: NextFunction,
 ) => {
-  // Default values
   let statusCode = err.statusCode || 500;
   let message = err.message || 'Internal Server Error';
 
-  // Log error (always log, do not expose sensitive info to client)
   logger.error('Unhandled Error', {
     message: err.message,
     stack: err.stack,
