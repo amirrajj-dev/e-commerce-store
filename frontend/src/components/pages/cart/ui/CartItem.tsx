@@ -16,7 +16,7 @@ const CartItem: React.FC<CartItemProps> = ({
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.1 }}
       exit={{ opacity: 0, x: 20 }}
-      className="flex items-center gap-4 p-4 bg-base-200 rounded-xl hover:bg-base-300 transition-colors"
+      className="flex items-center gap-4 p-4 bg-base-200 relative rounded-xl hover:bg-base-300 transition-colors"
     >
       {/* Product Image */}
       <div className="shrink-0">
@@ -65,13 +65,13 @@ const CartItem: React.FC<CartItemProps> = ({
 
       {/* Total Price & Remove */}
       <div className="text-right">
-        <p className="font-bold text-base-content text-lg">
+        <p className="font-bold text-base-content text-lg  absolute top-2 right-2 sm:static">
           ${(item.product.price * item.quantity).toFixed(2)}
         </p>
         <button
           onClick={() => onRemoveItem(item.productId)}
           disabled={isRemoving}
-          className="btn btn-ghost btn-sm text-error hover:bg-error hover:text-error-content mt-2"
+          className="btn btn-ghost btn-sm text-error hover:bg-error hover:text-error-content mt-2  absolute bottom-2 right-2 sm:static"
         >
           {isRemoving ? (
             <Loader2 size={16} className="animate-spin" />

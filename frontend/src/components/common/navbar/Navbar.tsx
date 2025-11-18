@@ -84,6 +84,7 @@ const Navbar = () => {
                       cartLength={
                         totalItems || 0
                       }
+                      setIsMenuOpen={setIsMenuOpen}
                     />
                   )}
 
