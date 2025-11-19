@@ -1,6 +1,7 @@
 # 🛍️ Full-Stack E-Commerce Platform  
 A modern, full-featured e-commerce application built with **TypeScript**, **Bun**, **Express**, **PostgreSQL + Prisma**, and a **Vite + React + Tailwind** frontend.  
 Includes full authentication, admin dashboard, product management, cart system, checkout via Stripe, analytics, coupon system, and more.
+**🚀 Live Demo:** [https://e-commerce-store-u8hm.onrender.com/](https://e-commerce-store-u8hm.onrender.com/)
 
 ---
 
